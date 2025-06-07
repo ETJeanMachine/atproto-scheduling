@@ -2,7 +2,6 @@
 name = "atproto-scheduling"
 version = "0.1.0"
 edition = "2024"
-author = "Eric Hamilton <etj2206@rit.edu>"
 
 [dependencies]
 axum = "0.8.4"

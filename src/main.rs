@@ -1,6 +1,6 @@
-use axum::{Json, Router, extract::Query, routing::get};
+use axum::{Router, extract::Query, routing::get};
 use regex::Regex;
-use serde_json::{Value, json};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 #[tokio::main]
@@ -21,6 +21,7 @@ async fn main() {
         "Test link: http://localhost:{}/oauth?handle=etjeanmachine.bsky.social",
         port
     );
+    println!("Test link: http://localhost:{}/oauth?handle=nat.vg", port);
     axum::serve(listener, app).await.unwrap();
 }
 
@@ -30,26 +31,62 @@ async fn root() -> &'static str {
 
 async fn oauth(Query(params): Query<HashMap<String, String>>) -> String {
     let handle = params.get("handle").unwrap();
+    match resolve_handle(handle.to_string()).await {
+        Ok(did) => {
+            format!("Auth route accessed! Username: {}, DID: {}", handle, did)
+        }
+        Err(_) => {
+            format!(
+                "Auth route accessed! Username: {} (failed to resolve)",
+                handle
+            )
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct ResolveHandleResponse {
+    did: String,
+}
+
+async fn resolve_handle(handle: String) -> Result<String, Box<dyn std::error::Error>> {
+    // regex to fetch the last part of the handle to check if that's the pds.
     let re = Regex::new(r"^.+\.(.+\..{2,})$").unwrap();
-    let pds_url = match re.captures(handle) {
+    let pds_url = match re.captures(handle.as_str()) {
         Some(capture) => Some(capture.get(1).unwrap().as_str()),
         None => None,
     };
-    // checking the end of the handle if there's smth there to see if it's a valid PDS url
+    // first check (PDS is in handle)
+    let client = reqwest::Client::new();
     if pds_url.is_some() {
-        let client = reqwest::Client::new();
         let url = format!(
             "https://{}/xrpc/com.atproto.identity.resolveHandle",
             pds_url.unwrap()
         );
-        let send = client.get(url).query(&[("handle", handle)]).send().await;
-        if let Ok(response) = send {
-            let json = response.json::<serde_json::Value>().await.unwrap();
-            println!("{:?}", json)
-        }
+        let did = client
+            .get(url)
+            .query(&[("handle", handle.clone())])
+            .send()
+            .await?
+            .json::<ResolveHandleResponse>()
+            .await?
+            .did;
+        return Ok(did);
     }
-    let message = format!("Auth route accessed! Username: {}", handle);
-    message
+    // second check (set by DNS)
+    let dns = format!("_atproto.{}", handle);
+    let url = format!("https://cloudflare-dns.com/dns-query?name={}&type=TXT", dns);
+    let response = client
+        .get(&url)
+        .header("Accept", "application/dns-json")
+        .send()
+        .await?
+        .json::<serde_json::Value>()
+        .await?;
+    println!("{:?}", response);
+    let data = response["Answer"][0]["data"].as_str().unwrap().to_string();
+    let did = data.split("=").nth(1).unwrap().to_string();
+    Ok(did)
 }
 
 async fn oauth_callback() -> &'static str {
