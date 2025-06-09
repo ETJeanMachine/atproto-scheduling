@@ -63,7 +63,7 @@ async fn resolve_handle(handle: String) -> Result<String, Box<dyn std::error::Er
     Ok(did)
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 struct DidDocument {
     id: String,
     #[serde(rename = "alsoKnownAs")]
@@ -71,7 +71,7 @@ struct DidDocument {
     service: Vec<Service>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 struct Service {
     id: String,
     #[serde(rename = "serviceEndpoint")]
@@ -86,7 +86,7 @@ pub async fn fetch_pds(handle: String) -> Result<String, Box<dyn std::error::Err
     let identity_type = did.split(":").nth(1).unwrap();
     let url = match identity_type {
         "plc" => format!("https://plc.directory/{}", did),
-        "web" => format!("https://{}/.well-known", handle),
+        "web" => format!("https://{}/.well-known/did.json", handle),
         _ => unreachable!(), /* Unsupported identity type */
     };
     let client = reqwest::Client::new();
