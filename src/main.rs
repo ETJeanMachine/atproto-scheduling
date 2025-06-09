@@ -31,16 +31,9 @@ async fn root() -> &'static str {
 
 async fn oauth(Query(params): Query<HashMap<String, String>>) -> String {
     let handle = params.get("handle").unwrap();
-    match utils::resolve_handle(handle.to_string()).await {
-        Ok(did) => {
-            format!("Auth route accessed! Username: {}, DID: {}", handle, did)
-        }
-        Err(_) => {
-            format!(
-                "Auth route accessed! Username: {} (failed to resolve)",
-                handle
-            )
-        }
+    match utils::fetch_pds(handle.clone()).await {
+        Ok(pds) => format!("Auth route accessed! PDS Endpoint: {}", pds),
+        Err(err) => format!("Error fetching PDS: {}", err),
     }
 }
 

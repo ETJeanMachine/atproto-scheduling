@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
@@ -17,7 +19,7 @@ struct DnsRecord {
     data: String,
 }
 
-pub async fn resolve_handle(handle: String) -> Result<String, Box<dyn std::error::Error>> {
+async fn resolve_handle(handle: String) -> Result<String, Box<dyn std::error::Error>> {
     // regex to fetch the last part of the handle to check if that's the pds.
     let re = Regex::new(r"^.+\.(.+\..{2,})$").unwrap();
     let pds_url = match re.captures(handle.as_str()) {
@@ -43,9 +45,9 @@ pub async fn resolve_handle(handle: String) -> Result<String, Box<dyn std::error
     }
     // second check (set by DNS)
     let dns = format!("_atproto.{}", handle);
-    let url = format!("https://cloudflare-dns.com/dns-query?name={}&type=TXT", dns);
     let response = client
-        .get(&url)
+        .get("https://cloudflare-dns.com/dns-query")
+        .query(&[("name", dns.as_str()), ("type", "TXT")])
         .header("Accept", "application/dns-json")
         .send()
         .await?
@@ -53,9 +55,48 @@ pub async fn resolve_handle(handle: String) -> Result<String, Box<dyn std::error
         .await?;
     let did = response.answer.unwrap()[0]
         .data
+        .trim_matches('"')
         .split("=")
         .nth(1)
         .unwrap()
         .to_string();
     Ok(did)
+}
+
+#[derive(Serialize, Deserialize)]
+struct DidDocument {
+    id: String,
+    #[serde(rename = "alsoKnownAs")]
+    also_known_as: Vec<String>,
+    service: Vec<Service>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct Service {
+    id: String,
+    #[serde(rename = "serviceEndpoint")]
+    service_endpoint: String,
+}
+
+pub async fn fetch_pds(handle: String) -> Result<String, Box<dyn std::error::Error>> {
+    // fetching the DID for the handle
+    let did = resolve_handle(handle.clone()).await?;
+    println!("{}", did);
+    // matching the identity type to find the DID document
+    let identity_type = did.split(":").nth(1).unwrap();
+    let url = match identity_type {
+        "plc" => format!("https://plc.directory/{}", did),
+        "web" => format!("https://{}/.well-known", handle),
+        _ => unreachable!(), /* Unsupported identity type */
+    };
+    let client = reqwest::Client::new();
+    // fetching the DID document
+    let did_document = client.get(url).send().await?.json::<DidDocument>().await?;
+    let service_map: HashMap<String, String> = did_document
+        .service
+        .into_iter()
+        .map(|s| (s.id, s.service_endpoint))
+        .collect();
+    let pds = service_map.get("#atproto_pds").unwrap();
+    Ok(pds.clone())
 }
