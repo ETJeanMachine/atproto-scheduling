@@ -81,7 +81,6 @@ struct Service {
 pub async fn fetch_pds(handle: String) -> Result<String, Box<dyn std::error::Error>> {
     // fetching the DID for the handle
     let did = resolve_handle(handle.clone()).await?;
-    println!("{}", did);
     // matching the identity type to find the DID document
     let identity_type = did.split(":").nth(1).unwrap();
     let url = match identity_type {
