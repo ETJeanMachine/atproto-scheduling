@@ -1,6 +1,6 @@
 mod utils;
 
-use axum::{Router, extract::Query, routing::get};
+use axum::{Router, extract::Query, response::Redirect, routing::get};
 use std::collections::HashMap;
 
 #[tokio::main]
@@ -29,12 +29,22 @@ async fn root() -> &'static str {
     "Root route accessed!"
 }
 
-async fn oauth(Query(params): Query<HashMap<String, String>>) -> String {
+async fn oauth(Query(params): Query<HashMap<String, String>>) -> Redirect {
     let handle = params.get("handle").unwrap();
-    match utils::fetch_pds(handle.clone()).await {
-        Ok(pds) => format!("Auth route accessed! PDS Endpoint: {}", pds),
-        Err(err) => format!("Error fetching PDS: {}", err),
-    }
+    let oauth_url = match utils::fetch_pds(handle.clone()).await {
+        Ok(pds_endpoint) => format!("{}/oauth", pds_endpoint),
+        Err(_) => return Redirect::to("/"),
+    };
+    let client = reqwest::Client::new();
+    let client_id_url = format!("{}/client", oauth_url);
+    let client_id = client
+        .post(client_id_url)
+        .query(&[("name", "atproto-scheduling")])
+        .send()
+        .await
+        .unwrap();
+    println!("{:?}", client_id);
+    Redirect::to(&oauth_url)
 }
 
 async fn oauth_callback() -> &'static str {
